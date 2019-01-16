@@ -1,0 +1,14 @@
+{
+    "compilerOptions": {
+        "module": "umd",
+        "target": "es2016",
+        "noImplicitAny": true,
+        "outDir": "built",
+        "rootDir": "./src",
+        "strict": true,
+        "sourceMap": true
+    },
+    "exclude": [
+        "node_modules"
+    ]
+}
