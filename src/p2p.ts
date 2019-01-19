@@ -37,10 +37,10 @@ const iceCandidatesPromise: Promise<string[]> = new Promise((resolve, reject) =>
     };
 });
 
-const p2pConnectionReady: Promise<{
+const p2pConnectionReady: () => Promise<{
     send: (msg: string) => void;
     onMessage: (msg: MessageEvent) => void;
-}> = new Promise((resolve, reject) => {
+}> = () => new Promise((resolve, reject) => {
     let channel: RTCDataChannel = connection.createDataChannel('dataChannel');
     channel.onopen = () => {
         const readyState = channel.readyState;
@@ -56,6 +56,7 @@ const p2pConnectionReady: Promise<{
         resolve(result);
     };
     channel.onmessage = (data) => {
+        console.log(data);
         result.onMessage(data);
     };
 });
@@ -91,57 +92,83 @@ const connectToRemote = (args: RemoteOffer, isOffer: boolean) => {
 
 if (isHost) {
     const path = SERVICE_PATH + resourceID;
-    createOffer().then(offer => {
-        const originOffer = offer;
-        const runChecker = () => {
-            const checkData = setInterval(() => {
-                fetchRemoteSdp(path).then(data => {
-                    if (data.answer !== originOffer.answer) {
-                        connectToRemote(data, false);
-                        clearInterval(checkData);
-                    }
-                });
-            }, 1000);
-        };
-        runChecker();
-        connection.oniceconnectionstatechange = () => {
-            switch(connection.iceConnectionState) {
-                case "closed":
-                case "failed":
-                case "disconnected":
-                    runChecker();
-                    break;
-            }
-        };
-    });
-    p2pConnectionReady.then((channel) => {
+    const reoffer = () => {
+        createOffer().then(offer => {
+            const originOffer = offer;
+            const runChecker = () => {
+                const checkData = setInterval(() => {
+                    fetchRemoteSdp(path).then(data => {
+                        if (data.answer !== originOffer.answer) {
+                            connectToRemote(data, false);
+                            clearInterval(checkData);
+                        }
+                    });
+                }, 1000);
+            };
+            runChecker();
+        });
+    };
+    reoffer();
+
+    connection.oniceconnectionstatechange = () => {
+        console.log("iceConnectionState", connection.iceConnectionState);
+        switch(connection.iceConnectionState) {
+            case "closed":
+            case "failed":
+            case "disconnected":
+                reoffer();
+                break;
+        }
+    };
+
+    p2pConnectionReady().then((channel) => {
         console.log("Send data");
-        channel.send("Hello world");
+        setInterval(() => {
+            channel.send("Hello world");
+        }, 5000);
     });
 } else {
+    let isReconnecting = false;
     const path = SERVICE_PATH + resourceID;
-    fetchRemoteSdp(path).then(data => {
-        connectToRemote(data, true);
-        data.ice.forEach(addIceCandidate);
-        // if (data.answer) {
-        //     connection.setRemoteDescription(new RTCSessionDescription({
-        //         sdp: atob(data.answer),
-        //         type: "offer",
-        //     }));
-        // } else {
-        // }
-        connection.createAnswer().then((desc) => {
-            connection.setLocalDescription(desc);
-            saveData(path, JSON.stringify({
-                offer: btoa(data.offer),
-                answer: btoa(desc.sdp!),
-                ice: data.ice.map(btoa),
-            }));
+    const reoffer = () => {
+        fetchRemoteSdp(path).then(data => {
+            connectToRemote(data, true);
+            data.ice.forEach(addIceCandidate);
+            connection.createAnswer().then((desc) => {
+                connection.setLocalDescription(desc);
+                saveData(path, JSON.stringify({
+                    offer: btoa(data.offer),
+                    answer: btoa(desc.sdp!),
+                    ice: data.ice.map(btoa),
+                }));
+            });
         });
+        p2pConnectionReady().then((channel) => {
+            channel.onMessage = (msg) => {
+                console.log("Received", msg);
+            };
+        });
+    };
+    reoffer();
+
+    window.addEventListener('unhandledrejection', () => {
+        if (isReconnecting) return;
+        console.log("Fail to connect");
+        isReconnecting = true;
+        setTimeout(() => {
+            reoffer();
+            isReconnecting = false;
+        }, 1000);
     });
-    p2pConnectionReady.then((channel) => {
-        channel.onMessage = (msg) => {
-            console.log("Received", msg);
-        };
-    });
+
+    connection.oniceconnectionstatechange = () => {
+        console.log("iceConnectionState", connection.iceConnectionState);
+        switch(connection.iceConnectionState) {
+            case "closed":
+            case "failed":
+            case "disconnected":
+                reoffer();
+                break;
+        }
+    };
 }
