@@ -91,6 +91,13 @@ const connectToRemote = (args: RemoteOffer, isOffer: boolean) => {
 };
 
 if (isHost) {
+    p2pConnectionReady().then((channel) => {
+        console.log("Send data");
+        setInterval(() => {
+            channel.send("Hello world");
+        }, 5000);
+    });
+
     const path = SERVICE_PATH + resourceID;
     const reoffer = () => {
         createOffer().then(offer => {
@@ -120,17 +127,15 @@ if (isHost) {
                 break;
         }
     };
-
-    p2pConnectionReady().then((channel) => {
-        console.log("Send data");
-        setInterval(() => {
-            channel.send("Hello world");
-        }, 5000);
-    });
 } else {
     let isReconnecting = false;
     const path = SERVICE_PATH + resourceID;
     const reoffer = () => {
+        p2pConnectionReady().then((channel) => {
+            channel.onMessage = (msg) => {
+                console.log("Received", msg);
+            };
+        });
         fetchRemoteSdp(path).then(data => {
             connectToRemote(data, true);
             data.ice.forEach(addIceCandidate);
@@ -142,11 +147,6 @@ if (isHost) {
                     ice: data.ice.map(btoa),
                 }));
             });
-        });
-        p2pConnectionReady().then((channel) => {
-            channel.onMessage = (msg) => {
-                console.log("Received", msg);
-            };
         });
     };
     reoffer();
