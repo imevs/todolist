@@ -30,7 +30,7 @@ const iceCandidatesPromise: Promise<string[]> = new Promise((resolve, reject) =>
     const iceCandidates: string[] = [];
     connection.onicecandidate = (event) => {
         if (event.candidate) {
-            iceCandidates.push(btoa(event.candidate.candidate));
+            iceCandidates.push(event.candidate.candidate);
         } else {
             resolve(iceCandidates);
         }
@@ -63,7 +63,7 @@ const p2pConnectionReady: () => Promise<{
 
 const addIceCandidate = (candidate: any) => {
     connection.addIceCandidate(new RTCIceCandidate({
-        candidate: atob(candidate),
+        candidate: candidate,
         sdpMLineIndex: 0,
         sdpMid: "data",
     }));
@@ -73,7 +73,7 @@ const createOffer = (): Promise<RemoteOffer> => {
         connection.setLocalDescription(desc);
         return iceCandidatesPromise.then((iceCandidates) => {
             const originOffer = {
-                offer: btoa(desc.sdp!),
+                offer: desc.sdp!,
                 answer: "",
                 ice: iceCandidates,
             };
@@ -85,7 +85,7 @@ const createOffer = (): Promise<RemoteOffer> => {
 
 const connectToRemote = (args: RemoteOffer, isOffer: boolean) => {
     connection.setRemoteDescription(new RTCSessionDescription({
-        sdp: atob(isOffer ? args.offer : args.answer),
+        sdp: isOffer ? args.offer : args.answer,
         type: isOffer ? "offer" : "answer",
     }));
 };
@@ -142,9 +142,9 @@ if (isHost) {
             connection.createAnswer().then((desc) => {
                 connection.setLocalDescription(desc);
                 saveData(path, JSON.stringify({
-                    offer: btoa(data.offer),
-                    answer: btoa(desc.sdp!),
-                    ice: data.ice.map(btoa),
+                    offer: data.offer,
+                    answer: desc.sdp!,
+                    ice: data.ice,
                 }));
             });
         });
