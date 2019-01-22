@@ -10,6 +10,7 @@ const template = new Template();
 const view = new View(template);
 
 const controller = new Controller(store, view);
+export const todoApp = controller;
 
 const setView = () => controller.setView(document.location.hash);
 $on(window, 'load', setView);

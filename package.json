@@ -1,7 +1,7 @@
 {
   "private": true,
   "scripts": {
-    "build": "tsc -p tsconfig.json"
+    "build": "tsc -p tsconfig.json --outFile bundle.js"
   },
   "dependencies": {
     "todomvc-app-css": "^2.0.1",

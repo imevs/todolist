@@ -1,4 +1,6 @@
 //// UTILS
+import {todoApp} from "./app";
+
 type RemoteOffer = { offer: string; answer: string; ice: string[] };
 
 const SERVICE_PATH = "https://api.jsonbin.io/b/";
@@ -22,7 +24,7 @@ const fetchRemoteSdp = (path: string): Promise<RemoteOffer> => {
 };
 //// UTILS
 
-const isHost = window.location.hash.indexOf("host") !== -1;
+const isHost = window.location.search.indexOf("host") !== -1;
 
 const connection = new RTCPeerConnection(null as any);
 
@@ -94,7 +96,7 @@ if (isHost) {
     p2pConnectionReady().then((channel) => {
         console.log("Send data");
         setInterval(() => {
-            channel.send("Hello world");
+            channel.send(JSON.stringify(todoApp.store.getLocalStorage()));
         }, 5000);
     });
 
@@ -132,8 +134,11 @@ if (isHost) {
     const path = SERVICE_PATH + resourceID;
     const reoffer = () => {
         p2pConnectionReady().then((channel) => {
-            channel.onMessage = (msg) => {
+            channel.onMessage = (msg: MessageEvent) => {
                 console.log("Received", msg);
+                const data = JSON.parse(msg.data);
+                todoApp.store.setLocalStorage(data);
+                todoApp._filter(true);
             };
         });
         fetchRemoteSdp(path).then(data => {
