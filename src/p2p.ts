@@ -1,28 +1,7 @@
-//// UTILS
 import {todoApp} from "./app";
+import {RemoteOffer, SignallingServer} from "./signallingServer";
 
-type RemoteOffer = { offer: string; answer: string; ice: string[] };
-
-const SERVICE_PATH = "https://api.jsonbin.io/b/";
-const resourceID = "5c3fb59481fe89272a8d96b5";
-const saveData = (path: string, data: string) => {
-    const req = new XMLHttpRequest();
-
-    req.onreadystatechange = () => {
-        if (req.readyState == XMLHttpRequest.DONE) {
-            console.log("Data saved");
-        }
-    };
-
-    req.open("PUT", path, true);
-    req.setRequestHeader("Content-type", "application/json");
-    req.send(data);
-};
-
-const fetchRemoteSdp = (path: string): Promise<RemoteOffer> => {
-    return fetch(path + "/latest").then(data => data.text()).then(data => JSON.parse(data));
-};
-//// UTILS
+const signallingServer = new SignallingServer();
 
 const isHost = window.location.search.indexOf("host") !== -1;
 
@@ -79,7 +58,7 @@ const createOffer = (): Promise<RemoteOffer> => {
                 answer: "",
                 ice: iceCandidates,
             };
-            saveData(SERVICE_PATH + resourceID, JSON.stringify(originOffer));
+            signallingServer.send(originOffer);
             return originOffer;
         });
     });
@@ -92,6 +71,38 @@ const connectToRemote = (args: RemoteOffer, isOffer: boolean) => {
     }));
 };
 
+const reofferOnHost = () => {
+    createOffer().then(offer => {
+        signallingServer.onMessage(offer, data => {
+            connectToRemote(data, false);
+        });
+    });
+};
+
+const reofferOnClient = () => {
+    p2pConnectionReady().then((channel) => {
+        channel.onMessage = (msg: MessageEvent) => {
+            console.log("Received", msg);
+            const data = JSON.parse(msg.data);
+            todoApp.store.setLocalStorage(data);
+            todoApp._filter(true);
+        };
+    });
+    signallingServer.onMessage(null, data => {
+        connectToRemote(data, true);
+        data.ice.forEach(addIceCandidate);
+        connection.createAnswer().then((desc) => {
+            connection.setLocalDescription(desc);
+            signallingServer.send({
+                offer: data.offer,
+                answer: desc.sdp!,
+                ice: data.ice,
+            });
+        });
+    });
+};
+
+const reoffer = isHost ? reofferOnHost : reofferOnClient;
 if (isHost) {
     p2pConnectionReady().then((channel) => {
         console.log("Send data");
@@ -99,81 +110,27 @@ if (isHost) {
             channel.send(JSON.stringify(todoApp.store.getLocalStorage()));
         }, 5000);
     });
-
-    const path = SERVICE_PATH + resourceID;
-    const reoffer = () => {
-        createOffer().then(offer => {
-            const originOffer = offer;
-            const runChecker = () => {
-                const checkData = setInterval(() => {
-                    fetchRemoteSdp(path).then(data => {
-                        if (data.answer !== originOffer.answer) {
-                            connectToRemote(data, false);
-                            clearInterval(checkData);
-                        }
-                    });
-                }, 1000);
-            };
-            runChecker();
-        });
-    };
-    reoffer();
-
-    connection.oniceconnectionstatechange = () => {
-        console.log("iceConnectionState", connection.iceConnectionState);
-        switch(connection.iceConnectionState) {
-            case "closed":
-            case "failed":
-            case "disconnected":
-                reoffer();
-                break;
-        }
-    };
-} else {
-    let isReconnecting = false;
-    const path = SERVICE_PATH + resourceID;
-    const reoffer = () => {
-        p2pConnectionReady().then((channel) => {
-            channel.onMessage = (msg: MessageEvent) => {
-                console.log("Received", msg);
-                const data = JSON.parse(msg.data);
-                todoApp.store.setLocalStorage(data);
-                todoApp._filter(true);
-            };
-        });
-        fetchRemoteSdp(path).then(data => {
-            connectToRemote(data, true);
-            data.ice.forEach(addIceCandidate);
-            connection.createAnswer().then((desc) => {
-                connection.setLocalDescription(desc);
-                saveData(path, JSON.stringify({
-                    offer: data.offer,
-                    answer: desc.sdp!,
-                    ice: data.ice,
-                }));
-            });
-        });
-    };
-    reoffer();
-
-    window.addEventListener('unhandledrejection', () => {
-        if (isReconnecting) return;
-        console.log("Fail to connect");
-        isReconnecting = true;
-        setTimeout(() => {
-            reoffer();
-            isReconnecting = false;
-        }, 1000);
-    });
-
-    connection.oniceconnectionstatechange = () => {
-        console.log("iceConnectionState", connection.iceConnectionState);
-        switch(connection.iceConnectionState) {
-            case "closed":
-            case "failed":
-            case "disconnected":
-                reoffer();
-                break;
-        }
-    };
 }
+reoffer();
+
+let isReconnecting = false;
+window.addEventListener('unhandledrejection', (error) => {
+    if (isReconnecting) return;
+    console.log("Fail to connect");
+    isReconnecting = true;
+    setTimeout(() => {
+        reoffer();
+        isReconnecting = false;
+    }, 1000);
+});
+
+connection.oniceconnectionstatechange = () => {
+    console.log("iceConnectionState", connection.iceConnectionState);
+    switch(connection.iceConnectionState) {
+        case "closed":
+        case "failed":
+        case "disconnected":
+            reoffer();
+            break;
+    }
+};
