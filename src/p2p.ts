@@ -18,27 +18,31 @@ const iceCandidatesPromise: Promise<string[]> = new Promise((resolve, reject) =>
     };
 });
 
+const channelExport = {
+    channel: null as null | RTCDataChannel,
+    send: (msg: string) => channelExport.channel && channelExport.channel.send(msg),
+    onMessage: (msg: MessageEvent) => {
+        console.log("default onMessage", msg);
+    },
+};
 const p2pConnectionReady: () => Promise<{
     send: (msg: string) => void;
     onMessage: (msg: MessageEvent) => void;
 }> = () => new Promise((resolve, reject) => {
     let channel: RTCDataChannel = connection.createDataChannel('dataChannel');
+    channelExport.channel = channel;
     channel.onopen = () => {
         const readyState = channel.readyState;
         console.log('channel state is: ' + readyState);
-    };
-    const result = {
-        send: (msg: string) => channel.send(msg),
-        onMessage: (msg: MessageEvent) => {},
+        resolve(channelExport);
     };
     connection.ondatachannel = (event) => {
         console.log("ondatachannel");
         channel = event.channel;
-        resolve(result);
+        channelExport.channel = channel;
     };
     channel.onmessage = (data) => {
-        console.log(data);
-        result.onMessage(data);
+        channelExport.onMessage(data);
     };
 });
 
@@ -73,6 +77,7 @@ const connectToRemote = (args: RemoteOffer, isOffer: boolean) => {
 
 const reofferOnHost = () => {
     createOffer().then(offer => {
+        setConnectingStatus();
         signallingServer.onMessage(offer, data => {
             connectToRemote(data, false);
         });
@@ -88,6 +93,7 @@ const reofferOnClient = () => {
             todoApp._filter(true);
         };
     });
+    setConnectingStatus();
     signallingServer.onMessage(null, data => {
         connectToRemote(data, true);
         data.ice.forEach(addIceCandidate);
@@ -117,6 +123,7 @@ let isReconnecting = false;
 window.addEventListener('unhandledrejection', (error) => {
     if (isReconnecting) return;
     console.log("Fail to connect");
+    setDisconnectedStatus();
     isReconnecting = true;
     setTimeout(() => {
         reoffer();
@@ -127,10 +134,33 @@ window.addEventListener('unhandledrejection', (error) => {
 connection.oniceconnectionstatechange = () => {
     console.log("iceConnectionState", connection.iceConnectionState);
     switch(connection.iceConnectionState) {
+        case "connected":
+        case "completed":
+            setConnectedStatus();
+            break;
         case "closed":
         case "failed":
         case "disconnected":
+            setDisconnectedStatus();
             reoffer();
             break;
     }
 };
+
+function setConnectedStatus() {
+    console.log("setConnectedStatus");
+    const favicon = document.getElementById('favicon') as HTMLLinkElement;
+    favicon.href = "circle-green.png";
+}
+
+function setDisconnectedStatus() {
+    console.log("setDisconnectedStatus");
+    const favicon = document.getElementById('favicon') as HTMLLinkElement;
+    favicon.href = "circle-red.png";
+}
+
+function setConnectingStatus() {
+    console.log("setConnectingStatus");
+    const favicon = document.getElementById('favicon') as HTMLLinkElement;
+    favicon.href = "circle-orange.png";
+}
