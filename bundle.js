@@ -543,13 +543,12 @@ define("app", ["require", "exports", "controller", "helpers", "template", "store
     const template = new template_1.default();
     const view = new view_1.default(template);
     const controller = new controller_1.default(store, view);
-    window.todoApp = controller;
     exports.todoApp = controller;
     const setView = () => controller.setView(document.location.hash);
     helpers_3.$on(window, 'load', setView);
     helpers_3.$on(window, 'hashchange', setView);
 });
-define("p2p", ["require", "exports", "app"], function (require, exports, app_1) {
+define("signallingServer", ["require", "exports"], function (require, exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     const SERVICE_PATH = "https://api.jsonbin.io/b/";
@@ -568,9 +567,47 @@ define("p2p", ["require", "exports", "app"], function (require, exports, app_1) 
     const fetchRemoteSdp = (path) => {
         return fetch(path + "/latest").then(data => data.text()).then(data => JSON.parse(data));
     };
-    //// UTILS
+    class SignallingServer {
+        constructor() {
+            this.onMessage = (originOffer, callback) => {
+                const path = SERVICE_PATH + resourceID;
+                if (!originOffer) {
+                    fetchRemoteSdp(path).then(data => {
+                        callback(data);
+                    });
+                }
+                else {
+                    const checkData = setInterval(() => {
+                        fetchRemoteSdp(path).then(data => {
+                            if (data.answer !== originOffer.answer) {
+                                callback(data);
+                                clearInterval(checkData);
+                            }
+                        });
+                    }, 1000);
+                }
+            };
+        }
+        send(data) {
+            saveData(SERVICE_PATH + resourceID, JSON.stringify(data));
+        }
+    }
+    exports.SignallingServer = SignallingServer;
+});
+define("p2p", ["require", "exports", "app", "signallingServer"], function (require, exports, app_1, signallingServer_1) {
+    "use strict";
+    Object.defineProperty(exports, "__esModule", { value: true });
+    const signallingServer = new signallingServer_1.SignallingServer();
     const isHost = window.location.search.indexOf("host") !== -1;
-    const connection = new RTCPeerConnection(null);
+    const connection = new RTCPeerConnection({
+        iceServers: [
+            { urls: 'stun:stun.l.google.com:19302' },
+            { urls: 'stun:stun1.l.google.com:19302' },
+            { urls: 'stun:stun2.l.google.com:19302' },
+            { urls: 'stun:stun3.l.google.com:19302' },
+            { urls: 'stun:stun4.l.google.com:19302' },
+        ]
+    });
     const iceCandidatesPromise = new Promise((resolve, reject) => {
         const iceCandidates = [];
         connection.onicecandidate = (event) => {
@@ -582,24 +619,28 @@ define("p2p", ["require", "exports", "app"], function (require, exports, app_1) 
             }
         };
     });
+    const channelExport = {
+        channel: null,
+        send: (msg) => channelExport.channel && channelExport.channel.send(msg),
+        onMessage: (msg) => {
+            console.log("default onMessage", msg);
+        },
+    };
     const p2pConnectionReady = () => new Promise((resolve, reject) => {
         let channel = connection.createDataChannel('dataChannel');
+        channelExport.channel = channel;
         channel.onopen = () => {
             const readyState = channel.readyState;
             console.log('channel state is: ' + readyState);
-        };
-        const result = {
-            send: (msg) => channel.send(msg),
-            onMessage: (msg) => { },
+            resolve(channelExport);
         };
         connection.ondatachannel = (event) => {
             console.log("ondatachannel");
             channel = event.channel;
-            resolve(result);
+            channelExport.channel = channel;
         };
         channel.onmessage = (data) => {
-            console.log(data);
-            result.onMessage(data);
+            channelExport.onMessage(data);
         };
     });
     const addIceCandidate = (candidate) => {
@@ -618,7 +659,7 @@ define("p2p", ["require", "exports", "app"], function (require, exports, app_1) 
                     answer: "",
                     ice: iceCandidates,
                 };
-                saveData(SERVICE_PATH + resourceID, JSON.stringify(originOffer));
+                signallingServer.send(originOffer);
                 return originOffer;
             });
         });
@@ -629,6 +670,38 @@ define("p2p", ["require", "exports", "app"], function (require, exports, app_1) 
             type: isOffer ? "offer" : "answer",
         }));
     };
+    const reofferOnHost = () => {
+        createOffer().then(offer => {
+            setConnectingStatus();
+            signallingServer.onMessage(offer, data => {
+                connectToRemote(data, false);
+            });
+        });
+    };
+    const reofferOnClient = () => {
+        p2pConnectionReady().then((channel) => {
+            channel.onMessage = (msg) => {
+                console.log("Received", msg);
+                const data = JSON.parse(msg.data);
+                app_1.todoApp.store.setLocalStorage(data);
+                app_1.todoApp._filter(true);
+            };
+        });
+        setConnectingStatus();
+        signallingServer.onMessage(null, data => {
+            connectToRemote(data, true);
+            data.ice.forEach(addIceCandidate);
+            connection.createAnswer().then((desc) => {
+                connection.setLocalDescription(desc);
+                signallingServer.send({
+                    offer: data.offer,
+                    answer: desc.sdp,
+                    ice: data.ice,
+                });
+            });
+        });
+    };
+    const reoffer = isHost ? reofferOnHost : reofferOnClient;
     if (isHost) {
         p2pConnectionReady().then((channel) => {
             console.log("Send data");
@@ -636,81 +709,49 @@ define("p2p", ["require", "exports", "app"], function (require, exports, app_1) 
                 channel.send(JSON.stringify(app_1.todoApp.store.getLocalStorage()));
             }, 5000);
         });
-        const path = SERVICE_PATH + resourceID;
-        const reoffer = () => {
-            createOffer().then(offer => {
-                const originOffer = offer;
-                const runChecker = () => {
-                    const checkData = setInterval(() => {
-                        fetchRemoteSdp(path).then(data => {
-                            if (data.answer !== originOffer.answer) {
-                                connectToRemote(data, false);
-                                clearInterval(checkData);
-                            }
-                        });
-                    }, 1000);
-                };
-                runChecker();
-            });
-        };
-        reoffer();
-        connection.oniceconnectionstatechange = () => {
-            console.log("iceConnectionState", connection.iceConnectionState);
-            switch (connection.iceConnectionState) {
-                case "closed":
-                case "failed":
-                case "disconnected":
-                    reoffer();
-                    break;
-            }
-        };
     }
-    else {
-        let isReconnecting = false;
-        const path = SERVICE_PATH + resourceID;
-        const reoffer = () => {
-            p2pConnectionReady().then((channel) => {
-                channel.onMessage = (msg) => {
-                    console.log("Received", msg);
-                    const data = JSON.parse(msg.data);
-                    app_1.todoApp.store.setLocalStorage(data);
-                    app_1.todoApp._filter(true);
-                };
-            });
-            fetchRemoteSdp(path).then(data => {
-                connectToRemote(data, true);
-                data.ice.forEach(addIceCandidate);
-                connection.createAnswer().then((desc) => {
-                    connection.setLocalDescription(desc);
-                    saveData(path, JSON.stringify({
-                        offer: data.offer,
-                        answer: desc.sdp,
-                        ice: data.ice,
-                    }));
-                });
-            });
-        };
-        reoffer();
-        window.addEventListener('unhandledrejection', () => {
-            if (isReconnecting)
-                return;
-            console.log("Fail to connect");
-            isReconnecting = true;
-            setTimeout(() => {
+    reoffer();
+    let isReconnecting = false;
+    window.addEventListener('unhandledrejection', (error) => {
+        if (isReconnecting)
+            return;
+        console.log("Fail to connect");
+        setDisconnectedStatus();
+        isReconnecting = true;
+        setTimeout(() => {
+            reoffer();
+            isReconnecting = false;
+        }, 1000);
+    });
+    connection.oniceconnectionstatechange = () => {
+        console.log("iceConnectionState", connection.iceConnectionState);
+        switch (connection.iceConnectionState) {
+            case "connected":
+            case "completed":
+                setConnectedStatus();
+                break;
+            case "closed":
+            case "failed":
+            case "disconnected":
+                setDisconnectedStatus();
                 reoffer();
-                isReconnecting = false;
-            }, 1000);
-        });
-        connection.oniceconnectionstatechange = () => {
-            console.log("iceConnectionState", connection.iceConnectionState);
-            switch (connection.iceConnectionState) {
-                case "closed":
-                case "failed":
-                case "disconnected":
-                    reoffer();
-                    break;
-            }
-        };
+                break;
+        }
+    };
+    function setConnectedStatus() {
+        console.log("setConnectedStatus");
+        const favicon = document.getElementById('favicon');
+        favicon.href = "circle-green.png";
+    }
+    function setDisconnectedStatus() {
+        console.log("setDisconnectedStatus");
+        const favicon = document.getElementById('favicon');
+        favicon.href = "circle-red.png";
+    }
+    function setConnectingStatus() {
+        console.log("setConnectingStatus");
+        const favicon = document.getElementById('favicon');
+        favicon.href = "circle-orange.png";
     }
 });
 //# sourceMappingURL=bundle.js.map
