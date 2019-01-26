@@ -602,10 +602,15 @@ define("p2p", ["require", "exports", "app", "signallingServer"], function (requi
     const connection = new RTCPeerConnection({
         iceServers: [
             { urls: 'stun:stun.l.google.com:19302' },
-            { urls: 'stun:stun1.l.google.com:19302' },
-            { urls: 'stun:stun2.l.google.com:19302' },
-            { urls: 'stun:stun3.l.google.com:19302' },
-            { urls: 'stun:stun4.l.google.com:19302' },
+            // { urls: 'stun:stun1.l.google.com:19302' },
+            // { urls: 'stun:stun2.l.google.com:19302' },
+            // { urls: 'stun:stun3.l.google.com:19302' },
+            // { urls: 'stun:stun4.l.google.com:19302' },
+            {
+                urls: 'turn:numb.viagenie.ca',
+                credential: 'muazkh',
+                username: 'webrtc@live.com'
+            }
         ]
     });
     const iceCandidatesPromise = new Promise((resolve, reject) => {
@@ -740,16 +745,22 @@ define("p2p", ["require", "exports", "app", "signallingServer"], function (requi
     };
     function setConnectedStatus() {
         console.log("setConnectedStatus");
+        const bar = document.querySelector("[name=theme-color]");
+        bar.content = "green";
         const favicon = document.getElementById('favicon');
         favicon.href = "circle-green.png";
     }
     function setDisconnectedStatus() {
         console.log("setDisconnectedStatus");
+        const bar = document.querySelector("[name=theme-color]");
+        bar.content = "red";
         const favicon = document.getElementById('favicon');
         favicon.href = "circle-red.png";
     }
     function setConnectingStatus() {
         console.log("setConnectingStatus");
+        const bar = document.querySelector("[name=theme-color]");
+        bar.content = "orange";
         const favicon = document.getElementById('favicon');
         favicon.href = "circle-orange.png";
     }
