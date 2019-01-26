@@ -1,4 +1,4 @@
-export type RemoteOffer = { offer: string; answer: string; ice: string[] };
+export type RemoteOffer = { offer: string; answer: string; iceOffer: string[]; iceAnswer: string[] };
 
 const SERVICE_PATH = "https://api.jsonbin.io/b/";
 const resourceID = "5c3fb59481fe89272a8d96b5";

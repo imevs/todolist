@@ -12,16 +12,16 @@ const connection = new RTCPeerConnection({
         // { urls: 'stun:stun2.l.google.com:19302' },
         // { urls: 'stun:stun3.l.google.com:19302' },
         // { urls: 'stun:stun4.l.google.com:19302' },
-        {
-            urls: 'turn:turn.bistri.com:80',
-            credential: 'homeo',
-            username: 'homeo'
-        }
         // {
-        //     urls: 'turn:numb.viagenie.ca',
-        //     credential: 'muazkh',
-        //     username: 'webrtc@live.com'
+        //     urls: 'turn:turn.bistri.com:80',
+        //     credential: 'homeo',
+        //     username: 'homeo'
         // }
+        {
+            urls: 'turn:numb.viagenie.ca',
+            credential: 'muazkh',
+            username: 'webrtc@live.com'
+        }
     ]
 });
 
@@ -78,7 +78,8 @@ const createOffer = (): Promise<RemoteOffer> => {
             const originOffer = {
                 offer: desc.sdp!,
                 answer: "",
-                ice: iceCandidates,
+                iceAnswer: [],
+                iceOffer: iceCandidates,
             };
             signallingServer.send(originOffer);
             return originOffer;
@@ -98,6 +99,7 @@ const reofferOnHost = () => {
         setConnectingStatus();
         signallingServer.onMessage(offer, data => {
             connectToRemote(data, false);
+            data.iceAnswer.forEach(addIceCandidate);
         });
     });
 };
@@ -114,13 +116,16 @@ const reofferOnClient = () => {
     setConnectingStatus();
     signallingServer.onMessage(null, data => {
         connectToRemote(data, true);
-        data.ice.forEach(addIceCandidate);
+        data.iceOffer.forEach(addIceCandidate);
         connection.createAnswer().then((desc) => {
             connection.setLocalDescription(desc);
-            signallingServer.send({
-                offer: data.offer,
-                answer: desc.sdp!,
-                ice: data.ice,
+            iceCandidatesPromise.then((iceAnswer) => {
+                signallingServer.send({
+                    offer: data.offer,
+                    answer: desc.sdp!,
+                    iceAnswer: iceAnswer,
+                    iceOffer: data.iceOffer,
+                });
             });
         });
     });
