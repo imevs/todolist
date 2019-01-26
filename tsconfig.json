@@ -6,6 +6,7 @@
         "outDir": "built",
         "rootDir": "./src",
         "strict": true,
+        "outFile": "./bundle.js",
         "sourceMap": true
     },
     "exclude": [
