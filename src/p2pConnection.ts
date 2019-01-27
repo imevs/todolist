@@ -85,7 +85,7 @@ export abstract class P2pConnection {
 
     public connectToRemote(args: RemoteOffer, isOffer: boolean) {
         this.connection.setRemoteDescription(new RTCSessionDescription({
-            sdp: isOffer ? args.offer : args.answer,
+            sdp: isOffer ? args.offer : args.answers[0].answer,
             type: isOffer ? "offer" : "answer",
         }));
     };
@@ -108,7 +108,7 @@ export abstract class P2pConnection {
 
         this.connection.oniceconnectionstatechange = () => {
             console.log("iceConnectionState", this.connection.iceConnectionState);
-            switch(this.connection.iceConnectionState) {
+            switch (this.connection.iceConnectionState) {
                 case "connected":
                 case "completed":
                     setConnectedStatus();
@@ -132,9 +132,8 @@ export class P2pConnectionHost extends P2pConnection {
             return this.iceCandidatesPromise.then((iceCandidates) => {
                 const originOffer = {
                     offer: desc.sdp!,
-                    answer: "",
-                    iceAnswer: [],
                     iceOffer: iceCandidates,
+                    answers: {},
                 };
                 this.signallingServer.send(originOffer);
                 return originOffer;
@@ -147,7 +146,7 @@ export class P2pConnectionHost extends P2pConnection {
             setConnectingStatus();
             this.signallingServer.onMessage(offer, data => {
                 this.connectToRemote(data, false);
-                data.iceAnswer.forEach(this.addIceCandidate);
+                data.answers[0].iceAnswer.forEach(this.addIceCandidate);
             });
         });
     }
@@ -165,6 +164,9 @@ export class P2pConnectionHost extends P2pConnection {
 }
 
 export class P2pConnectionClient extends P2pConnection {
+    // public clientId = Math.abs(Math.random() * 100);
+    public clientId = 0;
+
     protected sendOffer() {
         this.p2pConnectionReady().then((channel) => {
             channel.onMessage = (msg: MessageEvent) => {
@@ -175,7 +177,7 @@ export class P2pConnectionClient extends P2pConnection {
             };
         });
         setConnectingStatus();
-        this.signallingServer.onMessage(null, data => {
+        this.signallingServer.onMessage({clientId: this.clientId}, data => {
             this.connectToRemote(data, true);
             data.iceOffer.forEach(this.addIceCandidate);
             this.connection.createAnswer().then((desc) => {
@@ -183,9 +185,13 @@ export class P2pConnectionClient extends P2pConnection {
                 this.iceCandidatesPromise.then((iceAnswer) => {
                     this.signallingServer.send({
                         offer: data.offer,
-                        answer: desc.sdp!,
-                        iceAnswer: iceAnswer,
                         iceOffer: data.iceOffer,
+                        answers: {
+                            [this.clientId]: {
+                                answer: desc.sdp!,
+                                iceAnswer: iceAnswer,
+                            }
+                        },
                     });
                 });
             });

@@ -1,4 +1,13 @@
-export type RemoteOffer = { offer: string; answer: string; iceOffer: string[]; iceAnswer: string[] };
+export type RemoteOffer = {
+    offer: string;
+    iceOffer: string[];
+    answers: {
+        [clienId: string]: {
+            answer: string;
+            iceAnswer: string[];
+        }
+    },
+};
 
 const SERVICE_PATH = "https://api.jsonbin.io/b/";
 const resourceID = "5c3fb59481fe89272a8d96b5";
@@ -27,16 +36,18 @@ export class SignallingServer {
         saveData(SERVICE_PATH + resourceID, JSON.stringify(data));
     }
 
-    public onMessage = (originOffer: RemoteOffer | null, callback: (msg: RemoteOffer) => void) => {
+    public onMessage = (originOffer: RemoteOffer | { clientId: number }, callback: (msg: RemoteOffer) => void) => {
         const path = SERVICE_PATH + resourceID;
-        if (!originOffer) {
+        if ((originOffer as any).clientId !== undefined) {
             fetchRemoteSdp(path).then(data => {
                 callback(data);
             });
         } else {
             const checkData = setInterval(() => {
                 fetchRemoteSdp(path).then(data => {
-                    if (data.answer !== originOffer.answer) {
+                    let isNewAnswer = data.answers &&
+                        Object.keys(data.answers).length !== Object.keys((originOffer as RemoteOffer).answers).length;
+                    if (isNewAnswer) {
                         callback(data);
                         clearInterval(checkData);
                     }
