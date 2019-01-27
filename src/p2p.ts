@@ -1,4 +1,4 @@
-import {todoApp} from "./app";
+import {todoApp} from "./todoApp/app";
 import {P2pConnectionClient, P2pConnectionHost} from "p2pConnection";
 
 const isHost = window.location.search.indexOf("host") !== -1;
