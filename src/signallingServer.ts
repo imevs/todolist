@@ -1,12 +1,7 @@
-export type RemoteOffer = {
-    offer: string;
-    iceOffer: string[];
-    answers: {
-        [clienId: string]: {
-            answer: string;
-            iceAnswer: string[];
-        }
-    },
+export type Offer = { sdp: string; ice: string[]; };
+
+export type SessionInfo = Offer & {
+    answer: Offer;
 };
 
 const SERVICE_PATH = "https://api.jsonbin.io/b/";
@@ -26,34 +21,52 @@ const saveData = (path: string, data: string) => {
     req.send(data);
 };
 
-const fetchRemoteSdp = (path: string): Promise<RemoteOffer> => {
+const fetchRemoteSdp = (path: string): Promise<SessionInfo> => {
     return fetch(path + "/latest").then(data => data.text()).then(data => JSON.parse(data));
 };
 
 
 export class SignallingServer {
-    public send(data: RemoteOffer) {
+
+    public sessionInfo: SessionInfo | undefined;
+
+    public save(data: SessionInfo) {
         saveData(SERVICE_PATH + resourceID, JSON.stringify(data));
     }
 
-    public onMessage = (originOffer: RemoteOffer | { clientId: number }, callback: (msg: RemoteOffer) => void) => {
+    public send(data: Offer) {
+        this.save({
+            ...this.sessionInfo!, answer: data
+        });
+    }
+
+    public getHostInfo(callback: (msg: Offer) => void) {
         const path = SERVICE_PATH + resourceID;
-        if ((originOffer as any).clientId !== undefined) {
-            fetchRemoteSdp(path).then(data => {
-                callback(data);
+        fetchRemoteSdp(path).then(data => {
+            this.sessionInfo = data;
+            callback({
+                sdp: data.sdp,
+                ice: data.ice,
             });
-        } else {
-            const checkData = setInterval(() => {
-                fetchRemoteSdp(path).then(data => {
-                    let isNewAnswer = data.answers &&
-                        Object.keys(data.answers).length !== Object.keys((originOffer as RemoteOffer).answers).length;
-                    if (isNewAnswer) {
-                        callback(data);
-                        clearInterval(checkData);
-                    }
-                });
-            }, 1000);
-        }
+        });
+    }
+
+    public onNewClient(originOffer: SessionInfo, callback: (msg: Offer) => void) {
+        const path = SERVICE_PATH + resourceID;
+        const checkData = setInterval(() => {
+            fetchRemoteSdp(path).then(data => {
+                this.sessionInfo = data;
+                let isNewAnswer = data.answer && data.answer.sdp && data.answer.sdp !== originOffer.answer.sdp;
+                if (isNewAnswer) {
+                    originOffer = data;
+                    callback({
+                        sdp: data.answer.sdp,
+                        ice: data.answer.ice,
+                    });
+                    clearInterval(checkData);
+                }
+            });
+        }, 1000);
     }
 
 }

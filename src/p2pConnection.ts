@@ -1,4 +1,4 @@
-import {RemoteOffer, SignallingServer} from "./signallingServer";
+import {SessionInfo, SignallingServer} from "./signallingServer";
 import {setConnectedStatus, setConnectingStatus, setDisconnectedStatus} from "./connectionStatuses";
 
 export abstract class P2pConnection {
@@ -83,9 +83,9 @@ export abstract class P2pConnection {
         }));
     };
 
-    public connectToRemote(args: RemoteOffer, isOffer: boolean) {
+    public connectToRemote(sdp: string, isOffer: boolean) {
         this.connection.setRemoteDescription(new RTCSessionDescription({
-            sdp: isOffer ? args.offer : args.answers[0].answer,
+            sdp: sdp,
             type: isOffer ? "offer" : "answer",
         }));
     };
@@ -95,6 +95,7 @@ export abstract class P2pConnection {
 
     public setupReconnectLogic() {
         let isReconnecting = false;
+/*
         window.addEventListener('unhandledrejection', (error) => {
             if (isReconnecting) return;
             console.log("Fail to connect");
@@ -105,6 +106,7 @@ export abstract class P2pConnection {
                 isReconnecting = false;
             }, 1000);
         });
+*/
 
         this.connection.oniceconnectionstatechange = () => {
             console.log("iceConnectionState", this.connection.iceConnectionState);
@@ -125,17 +127,19 @@ export abstract class P2pConnection {
 }
 
 export class P2pConnectionHost extends P2pConnection {
-
-    public createOffer(): Promise<RemoteOffer> {
+    public createOffer(): Promise<SessionInfo> {
         return this.connection.createOffer().then((desc) => {
             this.connection.setLocalDescription(desc);
             return this.iceCandidatesPromise.then((iceCandidates) => {
                 const originOffer = {
-                    offer: desc.sdp!,
-                    iceOffer: iceCandidates,
-                    answers: {},
+                    sdp: desc.sdp!,
+                    ice: iceCandidates,
+                    answer: {
+                        sdp: "",
+                        ice: [],
+                    },
                 };
-                this.signallingServer.send(originOffer);
+                this.signallingServer.save(originOffer);
                 return originOffer;
             });
         });
@@ -144,9 +148,11 @@ export class P2pConnectionHost extends P2pConnection {
     protected sendOffer() {
         this.createOffer().then(offer => {
             setConnectingStatus();
-            this.signallingServer.onMessage(offer, data => {
-                this.connectToRemote(data, false);
-                data.answers[0].iceAnswer.forEach(this.addIceCandidate);
+            this.signallingServer.onNewClient(offer, data => {
+                this.connectToRemote(data.sdp, false);
+                data.ice.forEach(this.addIceCandidate);
+                const newConnection = new P2pConnectionHost(this.app);
+                newConnection.connect();
             });
         });
     }
@@ -164,10 +170,7 @@ export class P2pConnectionHost extends P2pConnection {
 }
 
 export class P2pConnectionClient extends P2pConnection {
-    // public clientId = Math.abs(Math.random() * 100);
-    public clientId = 0;
-
-    protected sendOffer() {
+    protected async sendOffer() {
         this.p2pConnectionReady().then((channel) => {
             channel.onMessage = (msg: MessageEvent) => {
                 console.log("Received", msg);
@@ -177,23 +180,15 @@ export class P2pConnectionClient extends P2pConnection {
             };
         });
         setConnectingStatus();
-        this.signallingServer.onMessage({clientId: this.clientId}, data => {
-            this.connectToRemote(data, true);
-            data.iceOffer.forEach(this.addIceCandidate);
-            this.connection.createAnswer().then((desc) => {
-                this.connection.setLocalDescription(desc);
-                this.iceCandidatesPromise.then((iceAnswer) => {
-                    this.signallingServer.send({
-                        offer: data.offer,
-                        iceOffer: data.iceOffer,
-                        answers: {
-                            [this.clientId]: {
-                                answer: desc.sdp!,
-                                iceAnswer: iceAnswer,
-                            }
-                        },
-                    });
-                });
+        this.signallingServer.getHostInfo(async data => {
+            this.connectToRemote(data.sdp, true);
+            data.ice.forEach(this.addIceCandidate);
+            const localDesc = await this.connection.createAnswer();
+            this.connection.setLocalDescription(localDesc);
+            const iceAnswer = await this.iceCandidatesPromise;
+            this.signallingServer.send({
+                sdp: localDesc.sdp!,
+                ice: iceAnswer,
             });
         });
     }
