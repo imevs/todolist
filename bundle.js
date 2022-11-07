@@ -1,12 +1,13 @@
-define("item", ["require", "exports"], function (require, exports) {
+define("todoApp/item", ["require", "exports"], function (require, exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
+    exports.emptyItemQuery = void 0;
     const Empty = {
         Record: {}
     };
     exports.emptyItemQuery = Empty.Record;
 });
-define("store", ["require", "exports", "item"], function (require, exports, item_1) {
+define("todoApp/store", ["require", "exports", "todoApp/item"], function (require, exports, item_1) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     class Store {
@@ -26,7 +27,7 @@ define("store", ["require", "exports", "item"], function (require, exports, item
          * Read the local ItemList from localStorage.
          */
         getLocalStorage() {
-            return this.liveTodos; // || JSON.parse(this.localStorage.getItem(this.name) || '[]');
+            return JSON.parse(this.localStorage.getItem(this.name) || '[]');
         }
         ;
         /**
@@ -34,7 +35,7 @@ define("store", ["require", "exports", "item"], function (require, exports, item
          */
         setLocalStorage(todos) {
             this.liveTodos = todos;
-            // this.localStorage.setItem(this.name, JSON.stringify(todos));
+            this.localStorage.setItem(this.name, JSON.stringify(todos));
         }
         /**
          * Find items with properties matching those on query.
@@ -131,9 +132,10 @@ define("store", ["require", "exports", "item"], function (require, exports, item
     }
     exports.default = Store;
 });
-define("helpers", ["require", "exports"], function (require, exports) {
+define("todoApp/helpers", ["require", "exports"], function (require, exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
+    exports.escapeForHTML = exports.$delegate = exports.$on = exports.qs = void 0;
     /**
      * querySelector wrapper
      */
@@ -174,7 +176,7 @@ define("helpers", ["require", "exports"], function (require, exports) {
      */
     exports.escapeForHTML = (s) => s.replace(/[&<]/g, c => c === '&' ? '&amp;' : '&lt;');
 });
-define("template", ["require", "exports", "helpers"], function (require, exports, helpers_1) {
+define("todoApp/template", ["require", "exports", "todoApp/helpers"], function (require, exports, helpers_1) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     class Template {
@@ -214,7 +216,7 @@ define("template", ["require", "exports", "helpers"], function (require, exports
     }
     exports.default = Template;
 });
-define("view", ["require", "exports", "helpers"], function (require, exports, helpers_2) {
+define("todoApp/view", ["require", "exports", "todoApp/helpers"], function (require, exports, helpers_2) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     const _itemId = (element) => parseInt(element.parentNode.dataset.id || element.parentNode.parentNode.dataset.id, 10);
@@ -409,7 +411,7 @@ define("view", ["require", "exports", "helpers"], function (require, exports, he
     }
     exports.default = View;
 });
-define("controller", ["require", "exports", "item"], function (require, exports, item_2) {
+define("todoApp/controller", ["require", "exports", "todoApp/item"], function (require, exports, item_2) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     class Controller {
@@ -536,9 +538,10 @@ define("controller", ["require", "exports", "item"], function (require, exports,
     }
     exports.default = Controller;
 });
-define("app", ["require", "exports", "controller", "helpers", "template", "store", "view"], function (require, exports, controller_1, helpers_3, template_1, store_1, view_1) {
+define("todoApp/app", ["require", "exports", "todoApp/controller", "todoApp/helpers", "todoApp/template", "todoApp/store", "todoApp/view"], function (require, exports, controller_1, helpers_3, template_1, store_1, view_1) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
+    exports.todoApp = void 0;
     const store = new store_1.default('todos-vanilla-typescript');
     const template = new template_1.default();
     const view = new view_1.default(template);
@@ -547,232 +550,5 @@ define("app", ["require", "exports", "controller", "helpers", "template", "store
     const setView = () => controller.setView(document.location.hash);
     helpers_3.$on(window, 'load', setView);
     helpers_3.$on(window, 'hashchange', setView);
-});
-define("signallingServer", ["require", "exports"], function (require, exports) {
-    "use strict";
-    Object.defineProperty(exports, "__esModule", { value: true });
-    const SERVICE_PATH = "https://api.jsonbin.io/b/";
-    const resourceID = "5c3fb59481fe89272a8d96b5";
-    const saveData = (path, data) => {
-        const req = new XMLHttpRequest();
-        req.onreadystatechange = () => {
-            if (req.readyState == XMLHttpRequest.DONE) {
-                console.log("Data saved");
-            }
-        };
-        req.open("PUT", path, true);
-        req.setRequestHeader("Content-type", "application/json");
-        req.send(data);
-    };
-    const fetchRemoteSdp = (path) => {
-        return fetch(path + "/latest").then(data => data.text()).then(data => JSON.parse(data));
-    };
-    class SignallingServer {
-        constructor() {
-            this.onMessage = (originOffer, callback) => {
-                const path = SERVICE_PATH + resourceID;
-                if (!originOffer) {
-                    fetchRemoteSdp(path).then(data => {
-                        callback(data);
-                    });
-                }
-                else {
-                    const checkData = setInterval(() => {
-                        fetchRemoteSdp(path).then(data => {
-                            if (data.answer !== originOffer.answer) {
-                                callback(data);
-                                clearInterval(checkData);
-                            }
-                        });
-                    }, 1000);
-                }
-            };
-        }
-        send(data) {
-            saveData(SERVICE_PATH + resourceID, JSON.stringify(data));
-        }
-    }
-    exports.SignallingServer = SignallingServer;
-});
-define("p2p", ["require", "exports", "app", "signallingServer"], function (require, exports, app_1, signallingServer_1) {
-    "use strict";
-    Object.defineProperty(exports, "__esModule", { value: true });
-    const signallingServer = new signallingServer_1.SignallingServer();
-    const isHost = window.location.search.indexOf("host") !== -1;
-    const connection = new RTCPeerConnection({
-        iceServers: [
-            { urls: 'stun:stun.l.google.com:19302' },
-            // { urls: 'stun:stun1.l.google.com:19302' },
-            // { urls: 'stun:stun2.l.google.com:19302' },
-            // { urls: 'stun:stun3.l.google.com:19302' },
-            // { urls: 'stun:stun4.l.google.com:19302' },
-            // {
-            //     urls: 'turn:turn.bistri.com:80',
-            //     credential: 'homeo',
-            //     username: 'homeo'
-            // }
-            {
-                urls: 'turn:numb.viagenie.ca',
-                credential: 'muazkh',
-                username: 'webrtc@live.com'
-            }
-        ]
-    });
-    const iceCandidatesPromise = new Promise((resolve, reject) => {
-        const iceCandidates = [];
-        connection.onicecandidate = (event) => {
-            if (event.candidate) {
-                iceCandidates.push(event.candidate.candidate);
-            }
-            else {
-                resolve(iceCandidates);
-            }
-        };
-    });
-    const channelExport = {
-        channel: null,
-        send: (msg) => channelExport.channel && channelExport.channel.send(msg),
-        onMessage: (msg) => {
-            console.log("default onMessage", msg);
-        },
-    };
-    const p2pConnectionReady = () => new Promise((resolve, reject) => {
-        let channel = connection.createDataChannel('dataChannel');
-        channelExport.channel = channel;
-        channel.onopen = () => {
-            const readyState = channel.readyState;
-            console.log('channel state is: ' + readyState);
-            resolve(channelExport);
-        };
-        connection.ondatachannel = (event) => {
-            console.log("ondatachannel");
-            channel = event.channel;
-            channelExport.channel = channel;
-        };
-        channel.onmessage = (data) => {
-            channelExport.onMessage(data);
-        };
-    });
-    const addIceCandidate = (candidate) => {
-        connection.addIceCandidate(new RTCIceCandidate({
-            candidate: candidate,
-            sdpMLineIndex: 0,
-            sdpMid: "data",
-        }));
-    };
-    const createOffer = () => {
-        return connection.createOffer().then((desc) => {
-            connection.setLocalDescription(desc);
-            return iceCandidatesPromise.then((iceCandidates) => {
-                const originOffer = {
-                    offer: desc.sdp,
-                    answer: "",
-                    iceAnswer: [],
-                    iceOffer: iceCandidates,
-                };
-                signallingServer.send(originOffer);
-                return originOffer;
-            });
-        });
-    };
-    const connectToRemote = (args, isOffer) => {
-        connection.setRemoteDescription(new RTCSessionDescription({
-            sdp: isOffer ? args.offer : args.answer,
-            type: isOffer ? "offer" : "answer",
-        }));
-    };
-    const reofferOnHost = () => {
-        createOffer().then(offer => {
-            setConnectingStatus();
-            signallingServer.onMessage(offer, data => {
-                connectToRemote(data, false);
-                data.iceAnswer.forEach(addIceCandidate);
-            });
-        });
-    };
-    const reofferOnClient = () => {
-        p2pConnectionReady().then((channel) => {
-            channel.onMessage = (msg) => {
-                console.log("Received", msg);
-                const data = JSON.parse(msg.data);
-                app_1.todoApp.store.setLocalStorage(data);
-                app_1.todoApp._filter(true);
-            };
-        });
-        setConnectingStatus();
-        signallingServer.onMessage(null, data => {
-            connectToRemote(data, true);
-            data.iceOffer.forEach(addIceCandidate);
-            connection.createAnswer().then((desc) => {
-                connection.setLocalDescription(desc);
-                iceCandidatesPromise.then((iceAnswer) => {
-                    signallingServer.send({
-                        offer: data.offer,
-                        answer: desc.sdp,
-                        iceAnswer: iceAnswer,
-                        iceOffer: data.iceOffer,
-                    });
-                });
-            });
-        });
-    };
-    const reoffer = isHost ? reofferOnHost : reofferOnClient;
-    if (isHost) {
-        p2pConnectionReady().then((channel) => {
-            console.log("Send data");
-            setInterval(() => {
-                channel.send(JSON.stringify(app_1.todoApp.store.getLocalStorage()));
-            }, 5000);
-        });
-    }
-    reoffer();
-    let isReconnecting = false;
-    window.addEventListener('unhandledrejection', (error) => {
-        if (isReconnecting)
-            return;
-        console.log("Fail to connect");
-        setDisconnectedStatus();
-        isReconnecting = true;
-        setTimeout(() => {
-            reoffer();
-            isReconnecting = false;
-        }, 1000);
-    });
-    connection.oniceconnectionstatechange = () => {
-        console.log("iceConnectionState", connection.iceConnectionState);
-        switch (connection.iceConnectionState) {
-            case "connected":
-            case "completed":
-                setConnectedStatus();
-                break;
-            case "closed":
-            case "failed":
-            case "disconnected":
-                setDisconnectedStatus();
-                reoffer();
-                break;
-        }
-    };
-    function setConnectedStatus() {
-        console.log("setConnectedStatus");
-        const bar = document.querySelector("[name=theme-color]");
-        bar.content = "green";
-        const favicon = document.getElementById('favicon');
-        favicon.href = "circle-green.png";
-    }
-    function setDisconnectedStatus() {
-        console.log("setDisconnectedStatus");
-        const bar = document.querySelector("[name=theme-color]");
-        bar.content = "red";
-        const favicon = document.getElementById('favicon');
-        favicon.href = "circle-red.png";
-    }
-    function setConnectingStatus() {
-        console.log("setConnectingStatus");
-        const bar = document.querySelector("[name=theme-color]");
-        bar.content = "orange";
-        const favicon = document.getElementById('favicon');
-        favicon.href = "circle-orange.png";
-    }
 });
 //# sourceMappingURL=bundle.js.map
