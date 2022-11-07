@@ -21,7 +21,7 @@ export function $delegate(
 	type: string,
 	handler: ((args: Event & { target: HTMLInputElement; keyCode: number; }) => void),
 	capture?: boolean,
-	) {
+) {
 	const dispatchEvent = (event: any) => {
 		const targetElement = event.target;
 		const potentialElements = target.querySelectorAll(selector);

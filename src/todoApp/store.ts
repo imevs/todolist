@@ -18,7 +18,7 @@ export default class Store {
 	 * Read the local ItemList from localStorage.
 	 */
 	getLocalStorage (): ItemType[] {
-		return this.liveTodos; // || JSON.parse(this.localStorage.getItem(this.name) || '[]');
+		return JSON.parse(this.localStorage.getItem(this.name) || '[]');
 	};
 
 	/**
@@ -26,7 +26,7 @@ export default class Store {
 	 */
 	setLocalStorage(todos: ItemType[]) {
 		this.liveTodos = todos;
-		// this.localStorage.setItem(this.name, JSON.stringify(todos));
+		this.localStorage.setItem(this.name, JSON.stringify(todos));
 	}
 
 	/**

@@ -17,7 +17,7 @@ export default class Controller {
 		});
 		view.bindRemoveCompleted(this.removeCompletedItems.bind(this));
 		view.bindToggleAll(this.toggleAll.bind(this));
-		}
+	}
 
 	/**
 	 * Set and render the active route.
